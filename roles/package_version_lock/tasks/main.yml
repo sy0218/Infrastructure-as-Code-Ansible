@@ -1,0 +1,42 @@
+# -----------------------------------------------------
+# 패키지 버전 고정
+# -----------------------------------------------------
+
+# 1. 커널 버전 수집
+- name: "Get kernel version"
+  command: uname -r
+  register: kernel_version
+  changed_when: false
+
+# 2. 고정 대상 패키지 목록 구성 (hold/검증에서 공용)
+- name: "Build hold package list"
+  set_fact:
+    hold_packages:
+      - "linux-image-{{ kernel_version.stdout }}"
+      - "openjdk-{{ java_version }}-jdk"
+      - "openjdk-{{ java_version }}-jdk-headless"
+      - "openjdk-{{ java_version }}-jre"
+      - "openjdk-{{ java_version }}-jre-headless"
+
+# 3. 커널 및 Java 패키지 hold (dpkg_selections 자체가 멱등 — command apt-mark hold는 매번 changed)
+- name: "Hold kernel and Java packages"
+  dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: "{{ hold_packages }}"
+
+# -----------------------------------------------------
+# 검증
+# -----------------------------------------------------
+- name: "Check held packages"
+  command: apt-mark showhold
+  register: held_packages
+  changed_when: false
+
+- name: "Assert kernel and Java packages are held"
+  assert:
+    that:
+      - item in held_packages.stdout_lines # 라인 단위 정확 일치 (조건문 안에서는 {{ }} 금지)
+    success_msg: "Good!.. | Package held: {{ item }}"
+    fail_msg: "ERROR!.. | Package NOT held: {{ item }}"
+  loop: "{{ hold_packages }}"

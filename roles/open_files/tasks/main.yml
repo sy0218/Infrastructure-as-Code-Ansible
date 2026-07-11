@@ -1,0 +1,25 @@
+# -----------------------------------------------------
+# Open files 설정 (nofile)
+# -----------------------------------------------------
+# root 사용자의 open files 제한 증가
+- name: "Set open files limit for root"
+  lineinfile:
+    path: /etc/security/limits.conf
+    regexp: '^root\s+-\s+nofile'
+    line: 'root - nofile 65536'
+    state: present
+
+# -----------------------------------------------------
+# Open files 설정 검증 (타겟 서버 파일 확인 — lookup은 컨트롤 노드를 읽으므로 사용 금지)
+# -----------------------------------------------------
+- name: "Check open files limit setting"
+  command: "grep '^root - nofile' /etc/security/limits.conf"
+  register: nofile_check
+  changed_when: false
+
+- name: "Assert open files limit is set for root"
+  assert:
+    that:
+      - "'root - nofile 65536' in nofile_check.stdout"
+    success_msg: "Good!.. | Open files limit for root is set to 65536"
+    fail_msg: "ERROR!.. | Open files limit for root is NOT set"

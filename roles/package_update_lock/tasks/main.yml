@@ -1,0 +1,38 @@
+# -----------------------------------------------------
+# 패키지 자동 업데이트 비활성화
+# -----------------------------------------------------
+
+# 1. APT 패키지 목록 자동 업데이트 비활성화
+- name: "Disable APT periodic package list update"
+  lineinfile:
+    path: /etc/apt/apt.conf.d/20auto-upgrades
+    regexp: '^APT::Periodic::Update-Package-Lists'
+    line: 'APT::Periodic::Update-Package-Lists "0";'
+    state: present
+    create: yes
+
+# 2. Unattended Upgrade 비활성화
+- name: "Disable unattended upgrades"
+  lineinfile:
+    path: /etc/apt/apt.conf.d/20auto-upgrades
+    regexp: '^APT::Periodic::Unattended-Upgrade'
+    line: 'APT::Periodic::Unattended-Upgrade "0";'
+    state: present
+    create: yes
+
+# -----------------------------------------------------
+# 자동 업데이트 비활성화 검증
+# -----------------------------------------------------
+
+- name: "Check auto-upgrade configuration"
+  command: cat /etc/apt/apt.conf.d/20auto-upgrades
+  register: auto_upgrade_conf
+  changed_when: false
+
+- name: "Assert auto-upgrade is disabled"
+  assert:
+    that:
+      - "'APT::Periodic::Update-Package-Lists \"0\";' in auto_upgrade_conf.stdout"
+      - "'APT::Periodic::Unattended-Upgrade \"0\";' in auto_upgrade_conf.stdout"
+    success_msg: "Good!.. | APT automatic updates are disabled"
+    fail_msg: "ERROR!.. | APT automatic updates are NOT disabled"

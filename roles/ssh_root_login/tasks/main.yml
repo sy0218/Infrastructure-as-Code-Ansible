@@ -1,0 +1,26 @@
+# -----------------------------------------------------
+# SSH 설정 (Root Login 허용)
+# -----------------------------------------------------
+- name: "Set SSH PermitRootLogin yes"
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin'
+    line: 'PermitRootLogin yes'
+    state: present
+  notify: Reload sshd
+
+
+# -----------------------------------------------------
+# SSH 설정 검증 (타겟 서버 파일 확인 — lookup은 컨트롤 노드를 읽으므로 사용 금지)
+# -----------------------------------------------------
+- name: "Check PermitRootLogin setting"
+  command: "grep '^PermitRootLogin' /etc/ssh/sshd_config"
+  register: root_login_check
+  changed_when: false
+
+- name: "Assert PermitRootLogin is enabled"
+  assert:
+    that:
+      - "'PermitRootLogin yes' in root_login_check.stdout"
+    success_msg: "Good!.. | SSH root login is enabled (PermitRootLogin yes)"
+    fail_msg: "ERROR!.. | SSH root login is NOT enabled"

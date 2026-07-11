@@ -1,0 +1,41 @@
+# =====================================================
+# Control Node
+# =====================================================
+- name: "[ Setup Control Node.. ]"
+  hosts: localhost
+  become: true
+  gather_facts: false
+
+  roles:
+    - control
+
+# =====================================================
+# Ubuntu Servers
+# =====================================================
+- name: "[ Ubuntu_Servers Settings.. ]"
+  hosts: Ubuntu_Servers
+  become: true
+  gather_facts: false
+
+  roles:
+    - root_password
+    - packages
+    - pip_packages
+    - nicname
+    - cloud_init
+    - ufw
+    - locale_ko
+    - ssh_root_login
+    - timezone
+    - ntp
+    - open_files
+    - logrotate
+    - shell_default
+    - java
+    #    - disable_swap
+    - enable_swap
+    - package_version_lock
+    - package_update_lock
+    - bash_common
+    - ssh_keygen
+    - etc_hosts

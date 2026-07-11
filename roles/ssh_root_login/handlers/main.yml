@@ -1,0 +1,5 @@
+# Ubuntu의 SSH 유닛 이름은 ssh (sshd는 별칭 — 24.04 소켓 활성화 환경에선 못 찾음)
+- name: Reload sshd
+  systemd:
+    name: ssh
+    state: reloaded

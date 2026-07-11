@@ -1,0 +1,10 @@
+# =====================================================
+# Terraform 설치
+# =====================================================
+- name: "[ Terraform Setup.. ]"
+  hosts: terraform
+  become: true
+  gather_facts: false
+
+  roles:
+    - terraform # HashiCorp 저장소 등록 + terraform 설치/hold

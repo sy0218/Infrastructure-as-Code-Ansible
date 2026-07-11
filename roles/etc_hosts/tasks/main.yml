@@ -1,0 +1,36 @@
+# -----------------------------------------------------
+# /etc/hosts 생성 (인벤토리 기반 전체 관리)
+# -----------------------------------------------------
+
+# 1. /etc/hosts 생성 (copy: content 자체가 멱등 — 내용이 같으면 changed=0)
+- name: "Create /etc/hosts from inventory"
+  copy:
+    dest: /etc/hosts
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      127.0.0.1   localhost
+      ::1         localhost
+
+      {% for host in groups['Ubuntu_Servers'] %}
+      {{ hostvars[host]['ansible_host'] }} {{ host }}
+      {% endfor %}
+
+# -----------------------------------------------------
+# /etc/hosts 설정 검증 (타겟 서버 파일에서 서버별 항목 확인)
+# -----------------------------------------------------
+- name: "Check /etc/hosts entries"
+  command: "grep -F '{{ hostvars[item].ansible_host }} {{ item }}' /etc/hosts"
+  loop: "{{ groups['Ubuntu_Servers'] }}"
+  register: hosts_check
+  changed_when: false
+  failed_when: false
+
+- name: "Assert /etc/hosts entries present"
+  assert:
+    that:
+      - item.rc == 0
+    success_msg: "Good!.. | /etc/hosts entry present: {{ item.item }}"
+    fail_msg: "ERROR!.. | /etc/hosts entry missing: {{ item.item }}"
+  loop: "{{ hosts_check.results }}"

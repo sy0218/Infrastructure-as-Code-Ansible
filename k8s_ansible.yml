@@ -1,0 +1,60 @@
+# =====================================================
+# 사전 검증 — 필수 Ansible 컬렉션 (컨트롤 노드)
+# =====================================================
+# hosts는 kubernetes_master지만 connection: local이라 실제 실행은
+# 컨트롤 노드에서만 이루어짐 (kubernetes 그룹 변수를 상속받기 위한 구성)
+- name: "[ Check Ansible Collections.. ]"
+  hosts: kubernetes_master
+  connection: local
+  gather_facts: false
+
+  roles:
+    - collection_check
+
+# =====================================================
+# K8s 공통 사전 준비 (ap, s1, s2)
+# =====================================================
+- name: "[ K8s Common Setup.. ]"
+  hosts: kubernetes
+  become: true
+  gather_facts: false
+
+  roles:
+    - k8s_prereq # 커널 모듈(overlay/br_netfilter) + sysctl + cgroup v2 확인
+    - containerd # 컨테이너 런타임 설치·버전 고정 + SystemdCgroup 활성화
+    - k8s_packages # k8s 저장소 등록 + kubeadm/kubelet/kubectl 설치/hold + node-ip 고정
+
+# =====================================================
+# K8s 컨트롤플레인 초기화 + Calico (ap)
+# → kubeadm init은 최초 1회만 동작 (admin.conf 있으면 재실행해도 스킵)
+# → 설정 바꿔서 다시 하려면 k8s_reset으로 클러스터 해체 후 재실행
+# =====================================================
+- name: "[ K8s Control Plane.. ]"
+  hosts: kubernetes_master
+  become: true
+  gather_facts: false
+
+  roles:
+    - k8s_master
+
+# =====================================================
+# K8s 워커 조인 (s1, s2)
+# =====================================================
+- name: "[ K8s Workers Join.. ]"
+  hosts: kubernetes_workers
+  become: true
+  gather_facts: false
+
+  roles:
+    - k8s_worker # 워커 조인(1회성·재실행 스킵) + 전체 클러스터 검증
+
+# =====================================================
+# 클러스터 해체 → 위 K8s 롤 전부 주석 처리 후 아래 주석 해제
+# =====================================================
+# - name: "[ K8s Reset.. ]"
+#   hosts: kubernetes
+#   become: true
+#   gather_facts: false
+#
+#   roles:
+#     - k8s_reset

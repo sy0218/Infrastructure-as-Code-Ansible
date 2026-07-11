@@ -1,0 +1,56 @@
+# -----------------------------------------------------
+# 모든 서버 SSH Key 생성 및 상호 공유
+# -----------------------------------------------------
+
+# 1. SSH 키 쌍 생성 (openssh_keypair 자체가 멱등 — force:no로 기존 키 유지)
+- name: "Create Ed25519 key pair"
+  openssh_keypair:
+    path: /root/.ssh/id_ed25519
+    type: ed25519 # 키 길이 고정이라 size 불필요
+    owner: root
+    group: root
+    mode: '0600'
+    force: no
+  register: ssh_key
+
+# 2. 공개키를 host fact로 저장
+- name: "Save public key as host fact"
+  set_fact:
+    my_public_key: "{{ ssh_key.public_key }}"
+
+# 3. 모든 서버 공개키를 리스트로 수집
+- name: "Collect all server public keys"
+  set_fact:
+    all_public_keys: >-
+      {{
+        groups['Ubuntu_Servers']
+        | map('extract', hostvars, 'my_public_key')
+        | list
+      }}
+
+# 4. authorized_keys에 모든 서버 공개키 배포
+#    (authorized_key 자체가 멱등 + 파일 생성/0600 권한까지 모듈이 관리 — 별도 권한 태스크 불필요)
+- name: "Distribute all server public keys"
+  authorized_key:
+    user: root
+    key: "{{ item }}"
+    state: present
+  loop: "{{ all_public_keys }}"
+
+# -----------------------------------------------------
+# ssh_keygen 검증 (타겟 서버 파일 확인 — lookup은 컨트롤 노드를 읽으므로 사용 금지)
+# -----------------------------------------------------
+- name: "Check authorized_keys entries"
+  command: "grep -F '{{ item }}' /root/.ssh/authorized_keys"
+  loop: "{{ all_public_keys }}"
+  register: authkey_check
+  changed_when: false
+  failed_when: false
+
+- name: "Assert SSH key exchange completed"
+  assert:
+    that:
+      - item.rc == 0
+    success_msg: "Good!.. | SSH key exchange completed"
+    fail_msg: "ERROR!.. | SSH key missing in authorized_keys"
+  loop: "{{ authkey_check.results }}"

@@ -1,0 +1,25 @@
+# -----------------------------------------------------
+# GRUB NIC 이름 고정 (eth*)
+# -----------------------------------------------------
+
+# 1. GRUB NIC 파라미터 설정 (lineinfile 자체가 멱등 — 사전 체크 불필요)
+- name: "Configure GRUB NIC parameter (fix to eth*)"
+  lineinfile:
+    path: /etc/default/grub
+    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT='
+    line: 'GRUB_CMDLINE_LINUX_DEFAULT="net.ifnames=0 biosdevname=0"'
+  notify: update-grub # 변경 시에만 grub-mkconfig 실행
+
+# 2. GRUB NIC 설정 검증
+- name: "Check applied GRUB NIC parameter"
+  command: "grep '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub"
+  register: grub_check
+  changed_when: false
+
+- name: "Assert GRUB NIC parameter applied"
+  assert:
+    that:
+      - "'net.ifnames=0' in grub_check.stdout"
+      - "'biosdevname=0' in grub_check.stdout"
+    success_msg: "Good!.. | NIC name configuration applied: {{ grub_check.stdout }}"
+    fail_msg: "ERROR!.. | GRUB NIC parameter NOT applied"

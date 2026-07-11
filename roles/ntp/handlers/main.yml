@@ -1,0 +1,5 @@
+# NTP 설정 변경 시에만 timesyncd 재시작
+- name: Restart timesyncd
+  systemd:
+    name: systemd-timesyncd
+    state: restarted
