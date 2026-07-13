@@ -3,7 +3,9 @@
 `SystemdCgroup = true`를 적용한다.
 - cgroup v2 환경에서 kubelet(systemd 드라이버)과 cgroup 관리 주체를 일치시키기 위함
 — 불일치 시 파드 재시작 반복 등 불안정 발생.
-- 설치 후 hold로 고정하며, 설정이 실제로 변경된 경우에만 containerd를 재시작한다.
+- **인벤토리 `containerd_insecure_registries`** 목록의 HTTP 사설 레지스트리(Harbor 등)에
+`certs.d/hosts.toml`로 HTTP 접속을 허용한다.
+- 설치 후 hold로 고정하며, 설정(config.toml/hosts.toml)이 실제로 변경된 경우에만 containerd를 재시작한다.
 ---
 <br>
 
@@ -49,11 +51,12 @@
   register: containerd_default
   changed_when: false
 
-# 5. SystemdCgroup만 켜서 설정 파일 배포
+# 5. SystemdCgroup 활성화 + certs.d 경로 지정해서 설정 파일 배포
+#    - config_path 기본값은 빈 문자열 → 지정 없이는 certs.d의 hosts.toml을 읽지 않음
 #    (파이프+sed는 비멱등이라 금지 — copy는 내용이 같으면 changed=0 보장)
 - name: "Apply containerd config"
   copy:
-    content: "{{ containerd_default.stdout | replace('SystemdCgroup = false', 'SystemdCgroup = true') }}\n"
+    content: "{{ containerd_default.stdout | replace('SystemdCgroup = false', 'SystemdCgroup = true') | replace('config_path = \"\"', 'config_path = \"/etc/containerd/certs.d\"') }}\n"
     dest: /etc/containerd/config.toml
     owner: root
     group: root
@@ -67,12 +70,38 @@
     enabled: true
     state: started
 
-# 7. 설정이 변경된 경우만 재시작 (매 실행 재시작 방지)
+# 7. 레지스트리별 접속 규칙 디렉토리 — 디렉토리 이름이 곧 레지스트리 주소(host:port)
+- name: "Create certs.d registry directories"
+  file:
+    path: "/etc/containerd/certs.d/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: "{{ containerd_insecure_registries }}"
+
+# 8. hosts.toml 배포 — 스킴을 http로 선언해 HTTPS 시도 자체를 차단
+#    (TLS 없는 사설 레지스트리 pull 시 "server gave HTTP response to HTTPS client" 방지)
+- name: "Apply insecure registry hosts.toml"
+  copy:
+    content: |
+      server = "http://{{ item }}"
+
+      [host."http://{{ item }}"]
+        capabilities = ["pull", "resolve"]
+    dest: "/etc/containerd/certs.d/{{ item }}/hosts.toml"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ containerd_insecure_registries }}"
+  register: registry_hosts
+
+# 9. 설정이 변경된 경우만 재시작 (매 실행 재시작 방지 — config.toml/hosts.toml 반영에는 재시작 필수)
 - name: "Restart containerd on config change"
   systemd:
     name: containerd
     state: restarted
-  when: containerd_config.changed
+  when: containerd_config.changed or registry_hosts.changed
 
 # -----------------------------------------------------
 # 검증
@@ -102,6 +131,21 @@
   failed_when: false
   changed_when: false
 
+# 설정 파일에 certs.d 경로 반영 확인
+- name: "Check certs.d config_path in config"
+  command: grep -c 'config_path = "/etc/containerd/certs.d"' /etc/containerd/config.toml
+  register: config_path_check
+  failed_when: false
+  changed_when: false
+
+# 레지스트리별 hosts.toml에 http 스킴 선언 확인
+- name: "Check insecure registry hosts.toml"
+  command: grep -c 'server = "http://{{ item }}"' /etc/containerd/certs.d/{{ item }}/hosts.toml
+  register: registry_hosts_check
+  failed_when: false
+  changed_when: false
+  loop: "{{ containerd_insecure_registries }}"
+
 - name: "Assert containerd active, version pinned and held"
   assert:
     that:
@@ -109,8 +153,19 @@
       - containerd_pkg_version.stdout == containerd_version # 고정 버전 일치 (조건문 안에서는 {{ }} 금지)
       - '"containerd" in held_containerd.stdout_lines'
       - systemd_cgroup_check.stdout | int >= 1
-    success_msg: "Good!.. | containerd {{ containerd_pkg_version.stdout }} active & held (SystemdCgroup = true)"
+      - config_path_check.stdout | int >= 1
+    success_msg: "Good!.. | containerd {{ containerd_pkg_version.stdout }} active & held (SystemdCgroup = true, certs.d enabled)"
     fail_msg: "ERROR!.. | containerd inactive, version mismatch or NOT held"
+
+- name: "Assert insecure registry hosts.toml applied"
+  assert:
+    that:
+      - item.stdout | int >= 1
+    success_msg: "Good!.. | insecure registry applied: {{ item.item }}"
+    fail_msg: "ERROR!.. | insecure registry NOT applied: {{ item.item }}"
+  loop: "{{ registry_hosts_check.results }}"
+  loop_control:
+    label: "{{ item.item }}"
 ```
 ---
 <br>
@@ -121,16 +176,24 @@
 - `allow_change_held_packages` + `allow_downgrade` → 버전 변수 변경 시 hold 상태여도 해당 버전으로 수렴
 - 설치 후 `dpkg_selections`로 hold — 의도치 않은 업그레이드 방지
 ---
-### 2️⃣ 설정 파일 생성 — SystemdCgroup 활성화
+### 2️⃣ 설정 파일 생성 — SystemdCgroup 활성화 + certs.d 경로 지정
 - `containerd config default` 출력을 `register`로 받아(`changed_when: false`)
 `replace` 필터로 `SystemdCgroup = true` 치환 후 `copy`로 배포
+- `config_path = "/etc/containerd/certs.d"`도 함께 치환 — 지정 없이는 hosts.toml을 읽지 않음
 - 파이프+sed 방식은 비멱등이라 금지 — copy는 내용 동일 시 **changed=0** 보장
 ---
-### 3️⃣ 서비스 기동 + 조건부 재시작
-- `systemd` 모듈로 기동/자동시작 등록, 설정이 **변경된 경우에만** 재시작
+### 3️⃣ HTTP 사설 레지스트리 허용 — certs.d/hosts.toml
+- 인벤토리 `containerd_insecure_registries` 목록으로 레지스트리별
+`/etc/containerd/certs.d/<host:port>/hosts.toml` 배포
+- `server = "http://..."`로 스킴을 박아 HTTPS 시도 자체를 차단
+— TLS 없는 레지스트리 pull 시 `server gave HTTP response to HTTPS client` 방지
 ---
-### 4️⃣ 검증
-- 서비스 active + **설치 버전 = 고정 버전** + hold 상태 + `SystemdCgroup = true` 존재를 `assert`로 검증
+### 4️⃣ 서비스 기동 + 조건부 재시작
+- `systemd` 모듈로 기동/자동시작 등록, 설정(config.toml/hosts.toml)이 **변경된 경우에만** 재시작
+---
+### 5️⃣ 검증
+- 서비스 active + **설치 버전 = 고정 버전** + hold 상태 + `SystemdCgroup = true`
++ certs.d `config_path` + 레지스트리별 hosts.toml 존재를 `assert`로 검증
 ---
 <br>
 
@@ -138,7 +201,12 @@
 ```bash
 TASK [Assert containerd active, version pinned and held]
 ok: [ap] => {
-    "msg": "Good!.. | containerd 1.7.12-0ubuntu4 active & held (SystemdCgroup = true)"
+    "msg": "Good!.. | containerd 1.7.12-0ubuntu4 active & held (SystemdCgroup = true, certs.d enabled)"
+}
+
+TASK [Assert insecure registry hosts.toml applied]
+ok: [ap] => (item=192.168.56.200:30002) => {
+    "msg": "Good!.. | insecure registry applied: 192.168.56.200:30002"
 }
 ```
 ---
