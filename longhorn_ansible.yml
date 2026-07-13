@@ -1,0 +1,13 @@
+# =====================================================
+# Longhorn 노드 사전 준비 (ap, s1, s2)
+# =====================================================
+# Longhorn 설치 전 각 노드의 iSCSI / multipathd / 데이터 경로를 준비함
+# → 데이터 경로는 인벤토리 longhorn_data_path 기준
+#   (Longhorn 설치 시 defaultDataPath와 일치시켜야 함)
+- name: "[ Longhorn Node Setup.. ]"
+  hosts: longhorn
+  become: true
+  gather_facts: false
+
+  roles:
+    - longhorn_prereq
