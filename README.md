@@ -9,7 +9,7 @@ Infrastructure as Code(IaC) 기반으로 **인프라 환경을 코드로 정의�
 </br>
 
 ## ✨ 주요 특징
-- **Role 기반 모듈 구조** — 기능 단위로 분리된 30개 롤을 조합해 서버 구성
+- **Role 기반 모듈 구조** — 기능 단위로 분리된 31개 롤을 조합해 서버 구성
 - **멱등성 보장** — 재실행해도 안전, 변경이 필요한 항목만 적용
 - **멀티서버 확장성** — 인벤토리에 서버만 추가하면 N대 동시 프로비저닝
 
@@ -34,13 +34,15 @@ IaC_Ansible/
 ├── host.yml              # 인벤토리 (서버 목록/변수)
 ├── ubuntu_ansible.yml    # 메인 플레이북 (서버 프로비저닝)
 ├── k8s_ansible.yml       # K8s 클러스터 구성 플레이북
+├── longhorn_ansible.yml  # Longhorn 노드 사전 준비 플레이북
 ├── terraform_ansible.yml # Terraform 설치 플레이북
 ├── bin/
 │   ├── ansible_setup.sh       # Ansible 설치 (Control Node용)
 │   ├── start_ansible.sh       # 메인 플레이북 실행
 │   ├── start_kubernetes.sh    # K8s 플레이북 실행
+│   ├── start_longhorn.sh      # Longhorn 플레이북 실행
 │   └── start_terraform.sh     # Terraform 플레이북 실행
-└── roles/                # 기능별 롤 (30종)
+└── roles/                # 기능별 롤 (31종)
     ├── control/
     ├── packages/
     ├── java/
@@ -68,6 +70,9 @@ Ansible 프로젝트 홈 디렉토리의 **절대 경로**를 인자로 전달�
 
 # K8s 클러스터 구성 (k8s_ansible.yml)
 /jsy/IaC_Ansible/bin/start_kubernetes.sh /jsy/IaC_Ansible
+
+# Longhorn 노드 사전 준비 (longhorn_ansible.yml)
+/jsy/IaC_Ansible/bin/start_longhorn.sh /jsy/IaC_Ansible
 
 # Terraform 설치 (terraform_ansible.yml)
 /jsy/IaC_Ansible/bin/start_terraform.sh /jsy/IaC_Ansible
@@ -109,6 +114,14 @@ K8s 클러스터(kubeadm + containerd + Calico) 구성 플레이북입니다.
 - **Play 2** — kubernetes 그룹 공통 사전 준비
 - **Play 3~4** — 컨트롤플레인 초기화(kubernetes_master) → 워커 조인(kubernetes_workers)
 - **적용할 롤은 `roles:` 목록 주석 해제로 선택** (해체용 k8s_reset 플레이는 주석 상태)
+
+---
+</br>
+
+## 📜 Longhorn 플레이북 (longhorn_ansible.yml)
+Longhorn(분산 블록 스토리지) 설치 전 노드 사전 준비 플레이북입니다.
+- **Play 1** — longhorn 그룹 전 노드에 open-iscsi 설치 + multipathd 차단 + 데이터 경로 생성
+- 버전과 데이터 경로는 인벤토리 `longhorn` 그룹에서 관리 (`open_iscsi_version`, `longhorn_data_path`)
 
 ---
 </br>
@@ -220,7 +233,7 @@ Terraform 설치 플레이북입니다.
 ---
 
 ### 🔹 containerd → [`📂 containerd.md`](./roles/containerd/tasks/containerd.md)
-- 컨테이너 런타임 containerd 설치·버전 고정 + SystemdCgroup 활성화 (인벤토리 `containerd_version` 기준)
+- 컨테이너 런타임 containerd 설치·버전 고정 + SystemdCgroup 활성화 + HTTP 사설 레지스트리 허용(certs.d) (인벤토리 `containerd_version`, `containerd_insecure_registries` 기준)
 ---
 
 ### 🔹 k8s_packages → [`📂 k8s_packages.md`](./roles/k8s_packages/tasks/k8s_packages.md)
@@ -237,6 +250,10 @@ Terraform 설치 플레이북입니다.
 
 ### 🔹 k8s_reset → [`📂 k8s_reset.md`](./roles/k8s_reset/tasks/k8s_reset.md)
 - 클러스터 해체(kubeadm reset) + 잔여물 정리 — 평소 주석 상태, 해체 시에만 활성화
+---
+
+### 🔹 longhorn_prereq → [`📂 longhorn_prereq.md`](./roles/longhorn_prereq/tasks/longhorn_prereq.md)
+- Longhorn 노드 사전 준비 — open-iscsi 설치·버전 고정 + multipathd 차단 + 데이터 경로 생성 (인벤토리 `open_iscsi_version`, `longhorn_data_path` 기준)
 ---
 
 ### 🔹 terraform → [`📂 terraform.md`](./roles/terraform/tasks/terraform.md)
