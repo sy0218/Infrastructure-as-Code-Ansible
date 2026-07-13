@@ -127,11 +127,33 @@ all:
         kubernetes_admin_user: "root" # 마스터에서 kubectl 사용할 계정 (.kube/config 배포 대상)
 
         #########################################
+        # HTTP 사설 레지스트리 허용 목록 (containerd 사용)
+        # → 이미지 주소의 host:port와 정확히 일치해야 함 (CIDR/대역 매칭 불가)
+        # → 변경 시 containerd 롤이 자동 재시작으로 반영
+        #########################################
+        containerd_insecure_registries:
+          - "192.168.56.200:30002" # Harbor (TLS 미사용 → HTTP 접속 허용)
+
+        #########################################
         # 필수 Ansible 컬렉션 (collection_check 사용)
         #########################################
         required_collections:
           - ansible.posix # sysctl 모듈 (k8s_prereq)
           - community.general # modprobe 모듈 (k8s_prereq)
+
+    longhorn:
+      hosts:
+        ap:
+        s1:
+        s2:
+
+      vars:
+        #########################################
+        # Longhorn 노드 사전 준비 (longhorn_prereq 사용)
+        # → 사용 가능 버전 확인: apt-cache madison open-iscsi
+        #########################################
+        open_iscsi_version: "2.1.9-3ubuntu4" # noble 기본 아카이브 버전
+        longhorn_data_path: /data/longhorn # Longhorn 설치 시 defaultDataPath와 일치시켜야 함
 
     terraform:
       hosts:
