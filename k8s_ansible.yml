@@ -20,9 +20,9 @@
   gather_facts: false
 
   roles:
-    - k8s_prereq # 커널 모듈(overlay/br_netfilter) + sysctl + cgroup v2 확인
+  #  - k8s_prereq # 커널 모듈(overlay/br_netfilter) + sysctl + cgroup v2 확인
     - containerd # 컨테이너 런타임 설치·버전 고정 + SystemdCgroup 활성화
-    - k8s_packages # k8s 저장소 등록 + kubeadm/kubelet/kubectl 설치/hold + node-ip 고정
+  #  - k8s_packages # k8s 저장소 등록 + kubeadm/kubelet/kubectl 설치/hold + node-ip 고정
 
 # =====================================================
 # K8s 컨트롤플레인 초기화 + Calico (ap)
@@ -35,7 +35,7 @@
   gather_facts: false
 
   roles:
-    - k8s_master
+  #  - k8s_master
 
 # =====================================================
 # K8s 워커 조인 (s1, s2)
@@ -46,7 +46,7 @@
   gather_facts: false
 
   roles:
-    - k8s_worker # 워커 조인(1회성·재실행 스킵) + 전체 클러스터 검증
+  #  - k8s_worker # 워커 조인(1회성·재실행 스킵) + 전체 클러스터 검증
 
 # =====================================================
 # 클러스터 해체 → 위 K8s 롤 전부 주석 처리 후 아래 주석 해제
