@@ -9,7 +9,7 @@ Infrastructure as Code(IaC) 기반으로 **인프라 환경을 코드로 정의�
 </br>
 
 ## ✨ 주요 특징
-- **Role 기반 모듈 구조** — 기능 단위로 분리된 31개 롤을 조합해 서버 구성
+- **Role 기반 모듈 구조** — 기능 단위로 분리된 32개 롤을 조합해 서버 구성
 - **멱등성 보장** — 재실행해도 안전, 변경이 필요한 항목만 적용
 - **멀티서버 확장성** — 인벤토리에 서버만 추가하면 N대 동시 프로비저닝
 
@@ -36,13 +36,15 @@ IaC_Ansible/
 ├── k8s_ansible.yml       # K8s 클러스터 구성 플레이북
 ├── longhorn_ansible.yml  # Longhorn 노드 사전 준비 플레이북
 ├── terraform_ansible.yml # Terraform 설치 플레이북
+├── docker_ansible.yml    # Docker 설치 플레이북
 ├── bin/
 │   ├── ansible_setup.sh       # Ansible 설치 (Control Node용)
 │   ├── start_ansible.sh       # 메인 플레이북 실행
 │   ├── start_kubernetes.sh    # K8s 플레이북 실행
 │   ├── start_longhorn.sh      # Longhorn 플레이북 실행
-│   └── start_terraform.sh     # Terraform 플레이북 실행
-└── roles/                # 기능별 롤 (31종)
+│   ├── start_terraform.sh     # Terraform 플레이북 실행
+│   └── start_docker.sh        # Docker 플레이북 실행
+└── roles/                # 기능별 롤 (32종)
     ├── control/
     ├── packages/
     ├── java/
@@ -76,6 +78,9 @@ Ansible 프로젝트 홈 디렉토리의 **절대 경로**를 인자로 전달�
 
 # Terraform 설치 (terraform_ansible.yml)
 /jsy/IaC_Ansible/bin/start_terraform.sh /jsy/IaC_Ansible
+
+# Docker 설치 (docker_ansible.yml)
+/jsy/IaC_Ansible/bin/start_docker.sh /jsy/IaC_Ansible
 ```
 > ⚠️ **반드시 Ansible 프로젝트의 절대 경로를 인자로 전달해서 실행하세요.**
 
@@ -130,6 +135,14 @@ Longhorn(분산 블록 스토리지) 설치 전 노드 사전 준비 플레이�
 Terraform 설치 플레이북입니다.
 - **Play 1** — terraform 그룹에 HashiCorp 저장소 등록 + Terraform 설치/버전 고정
 - 대상 호스트와 버전은 인벤토리 `terraform` 그룹에서 관리
+
+---
+</br>
+
+## 📜 Docker 플레이북 (docker_ansible.yml)
+Docker(docker.io + compose 플러그인) 설치 플레이북입니다.
+- **Play 1** — docker 그룹에 docker.io/compose 설치·버전 고정 + 서비스 기동 + docker 그룹 추가
+- 버전과 대상 계정은 인벤토리 `docker` 그룹에서 관리 (`docker_version`, `docker_compose_version`, `docker_users`)
 
 ---
 </br>
@@ -258,4 +271,8 @@ Terraform 설치 플레이북입니다.
 
 ### 🔹 terraform → [`📂 terraform.md`](./roles/terraform/tasks/terraform.md)
 - HashiCorp 저장소 등록 + Terraform 설치·버전 고정 (인벤토리 `terraform_version` 기준)
+---
+
+### 🔹 docker → [`📂 docker.md`](./roles/docker/tasks/docker.md)
+- Docker(docker.io) + compose 플러그인 설치·버전 고정 + docker 그룹 추가 — docker-ce 대신 docker.io로 K8s containerd와 공존 (인벤토리 `docker_version`, `docker_compose_version`, `docker_users` 기준)
 ---
