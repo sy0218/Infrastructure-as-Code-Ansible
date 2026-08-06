@@ -36,6 +36,15 @@
           source {{ project_conf_path }}
       fi
 
+      # Bash completion — 로그인 셸은 패키지의 /etc/profile.d/bash_completion.sh 가 이미 켠다.
+      # 비로그인 인터랙티브 셸(sudo su / 중첩 bash)은 /etc/bash.bashrc·/root/.bashrc 스탠자가
+      # 주석 배포라 안 켜진다 → 그 구멍만 이 블록이 메운다.
+      # VERSINFO 가드는 배포판 관용구 그대로 — 이미 로드한 대상(/etc/skel/.bashrc)의 중복 로드를 막는다
+      # (완성 스크립트에 재진입 가드가 없어 두 번 source 하면 76KB 를 통째로 다시 읽는다)
+      if [ -z "${BASH_COMPLETION_VERSINFO-}" ] && [ -f /usr/share/bash-completion/bash_completion ]; then
+          source /usr/share/bash-completion/bash_completion
+      fi
+
       # Safe aliases
       alias rm='rm -i'
       alias cp='cp -i'
@@ -83,8 +92,9 @@ bashrc_targets:
   - /etc/skel/.bashrc
 # project 환경 변수
 project_envs:
-  - JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+  - JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
   - KAFKA_HOME=/application/kafka
+  - PATH=$JAVA_HOME/bin:$KAFKA_HOME/bin:$PATH
 ```
 ---
 <br>
@@ -96,7 +106,16 @@ project_envs:
 ---
 ### 2️⃣ Bash 공통 설정 적용
 - `bashrc_targets`의 각 파일에 `blockinfile`로 공통 블록 적용 — 자체 멱등
-- 환경 파일 source, rm/cp/mv `-i` alias, 프롬프트(PS1) 통일
+- 환경 파일 source, bash 탭 완성 활성화, rm/cp/mv `-i` alias, 프롬프트(PS1) 통일
+- 탭 완성의 활성화 경로는 셸 종류에 따라 갈린다 (ap 노드 실측 기준):
+  - **로그인 셸** (`ssh`, `su -`, `sudo -i`) — `bash-completion` 패키지가 함께 깔아주는
+    `/etc/profile.d/bash_completion.sh` 가 이미 켠다. 이 롤이 할 일이 없다.
+  - **비로그인 인터랙티브 셸** (`sudo su`, `su`, 중첩 `bash`) — Ubuntu 24.04 가 `/etc/bash.bashrc`(34~40행)와
+    `/root/.bashrc`(97~98행)의 스탠자를 **주석 상태로 배포**해서 안 켜진다. **이 구멍을 이 롤이 메운다.**
+- 패키지 설치는 `install_packages`(packages 롤)가, source 는 이 롤이 담당한다 — 둘 다 필요하다.
+- `BASH_COMPLETION_VERSINFO` 가드를 두는 이유: `/etc/skel/.bashrc` 는 스탠자가 이미 활성(108~116행)이라
+  가드 없이 넣으면 76KB 완성 스크립트를 두 번 읽는다(스크립트 자체에 재진입 가드가 없다).
+  같은 가드를 배포판의 `/etc/profile.d/bash_completion.sh` 도 쓴다 — 관용구를 그대로 따른 것.
 ---
 ### 3️⃣ 설정 검증
 - 환경변수 파일 존재(`stat`) + 대상 파일별 설정 블록 존재(`grep`)를 `assert`

@@ -38,4 +38,7 @@
     - package_update_lock
     - bash_common
     - ssh_keygen
-    - etc_hosts
+    # 이 롤만 태그를 갖는 이유: /etc/hosts 는 인그레스 전환·노드 IP 변경 때 단독으로
+    # 다시 돌려야 하는데, 태그가 없으면 롤 20개 전체를 재실행하는 것이 유일한 경로다.
+    #   ansible-playbook ubuntu_ansible.yml --tags etc_hosts
+    - { role: etc_hosts, tags: ['etc_hosts'] }

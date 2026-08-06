@@ -41,8 +41,8 @@
 
 ## 📌 host.yml 예시
 ```yaml
-# 설치할 자바 버전
-java_version: "11"
+# 설치할 자바 버전 (Kafka 4.0+ 브로커는 Java 17 필수)
+java_version: "17"
 ```
 ---
 <br>

@@ -1,0 +1,17 @@
+# =====================================================
+# MinIO 설치 (SNSD, 로컬 이관)
+# =====================================================
+# ADR 0 (Kafka)의 판단을 데이터 스토어에도 적용한다 — K8s 가 아니라 서버 로컬(systemd).
+# Terraform 300-data-layer-base 의 minio_endpoint 가 여기서 설치한 주소를 가리키며,
+# 304-airflow 는 로그 버킷이 있어야 init Job 이 통과한다.
+#
+# ⚠ 계정·버킷 이름이 곧 계약이다 — minio_root_user 는 Terraform 300/303 의
+#   secrets.auto.tfvars 와 글자 그대로 같아야 한다.
+# =====================================================
+- name: "[ MinIO Setup.. ]"
+  hosts: minio
+  become: true
+  gather_facts: false
+
+  roles:
+    - minio # MinIO(SNSD) + mc 설치 + 버킷 3종 생성 + config 버킷 시드 주입

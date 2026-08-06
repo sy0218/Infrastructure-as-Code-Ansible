@@ -3,6 +3,8 @@ apiVersion: kubeadm.k8s.io/v1beta4
 kind: InitConfiguration
 localAPIEndpoint:
   advertiseAddress: {{ ansible_host }}
+nodeRegistration:
+  taints: []          # control-plane NoSchedule taint 미적용 (ap도 워크로드 스케줄링 → 필요 시 삭제)
 ---
 apiVersion: kubeadm.k8s.io/v1beta4
 kind: ClusterConfiguration

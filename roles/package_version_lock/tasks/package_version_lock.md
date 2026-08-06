@@ -75,7 +75,7 @@
 ## 🧩 변수 설명
 ```yaml
 # host.yml
-java_version: "11"
+java_version: "17"
 ```
 ---
 <br>
@@ -83,8 +83,8 @@ java_version: "11"
 ## ✅ 실행 결과 예시
 ```bash
 TASK [Assert kernel and Java packages are held]
-ok: [192.168.56.60] => (item=openjdk-11-jdk) => {
-    "msg": "Good!.. | Package held: openjdk-11-jdk"
+ok: [192.168.56.60] => (item=openjdk-17-jdk) => {
+    "msg": "Good!.. | Package held: openjdk-17-jdk"
 }
 ```
 ---

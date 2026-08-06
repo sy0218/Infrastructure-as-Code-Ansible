@@ -1,6 +1,13 @@
 # 📦 containerd 설치 및 설정 (Ansible)
-- K8s 컨테이너 런타임인 containerd를 **인벤토리 `containerd_version`으로 버전 고정** 설치하고
+- K8s 컨테이너 런타임인 containerd와 **그 짝인 runc**를
+**인벤토리 `containerd_version` · `runc_version`으로 버전 고정** 설치하고
 `SystemdCgroup = true`를 적용한다.
+- ⚠ **둘은 한 apt 트랜잭션에서 함께 설치하고 함께 hold한다.**
+containerd의 의존은 버전 없는 `Depends: runc`뿐이라, 따로 두면 runc만 혼자 올라가 짝이 깨진다.
+짝이 어긋나면 containerd가 커널에 올리는 AppArmor 프로파일이 runc의 종료 신호를 막아
+**파드가 `Terminating`에서 사라지지 않는다** (Ubuntu 버그 [#2065423](https://bugs.launchpad.net/ubuntu/+source/containerd-app/+bug/2065423)).
+- ⚠ **버전 변경 후에는 노드 재부팅이 필요하다.** AppArmor 프로파일이 파일이 아니라
+containerd 바이너리에 내장돼 실행 시 커널에 로드되므로, 패키지만 갈아도 옛 규칙이 커널에 남는다.
 - cgroup v2 환경에서 kubelet(systemd 드라이버)과 cgroup 관리 주체를 일치시키기 위함
 — 불일치 시 파드 재시작 반복 등 불안정 발생.
 - **인벤토리 `containerd_insecure_registries`** 목록의 HTTP 사설 레지스트리(Harbor 등)에
@@ -18,11 +25,20 @@
 # cgroup 관리 주체를 일치시킴 (불일치 시 파드 재시작 반복 등 불안정)
 # -----------------------------------------------------
 
-# 1. containerd 설치 — 인벤토리 containerd_version으로 버전 고정
+# 1. containerd + runc 설치 — 인벤토리 버전으로 둘 다 고정
 #    (버전 변경 시 hold 상태여도 해당 버전으로 수렴)
-- name: "Install containerd"
+#
+#    ⚠ 반드시 한 apt 트랜잭션에서 함께 설치한다.
+#      containerd 의 의존은 버전 없는 `Depends: runc` 뿐이라, 따로 설치하면 apt 가
+#      먼저 최신 runc 를 끌어온 뒤 다운그레이드하는 모양이 된다.
+#    ⚠ 둘의 버전은 짝이 맞아야 한다. 어긋나면 containerd 가 커널에 올리는 AppArmor
+#      프로파일이 runc 의 종료 신호를 막아 파드가 Terminating 에서 안 사라진다
+#      (Ubuntu 버그 #2065423 — containerd 1.7.12 + runc 1.3.x 조합에서 실제 발생).
+- name: "Install containerd and runc"
   apt:
-    name: "containerd={{ containerd_version }}"
+    name:
+      - "containerd={{ containerd_version }}"
+      - "runc={{ runc_version }}"
     state: present # 없으면 설치
     update_cache: yes # apt update 먼저 실행
     cache_valid_time: 3600 # 캐시가 1시간 이내면 update 생략 (매 실행 시간 절약)
@@ -31,10 +47,14 @@
 
 # 2. 버전 고정 — 의도치 않은 업그레이드 방지
 #    (dpkg_selections 자체가 멱등 — command apt-mark hold는 매번 changed)
-- name: "Hold containerd package"
+#    runc 도 함께 건다 — 안 걸면 noble-updates 를 타고 혼자 올라가 짝이 깨진다.
+- name: "Hold containerd and runc packages"
   dpkg_selections:
-    name: containerd
+    name: "{{ item }}"
     selection: hold
+  loop:
+    - containerd
+    - runc
 
 # 3. 설정 디렉토리 생성 (file 모듈 자체가 멱등)
 - name: "Create containerd config directory"
@@ -52,7 +72,9 @@
   changed_when: false
 
 # 5. SystemdCgroup 활성화 + certs.d 경로 지정해서 설정 파일 배포
-#    - config_path 기본값은 빈 문자열 → 지정 없이는 certs.d의 hosts.toml을 읽지 않음
+#    - 1.x: config_path 기본값이 빈 문자열 → 채워 넣어야 certs.d의 hosts.toml을 읽는다
+#    - 2.x(version=3): 기본값에 이미 certs.d가 들어 있고 TOML이 홑따옴표라 아래 replace는
+#      아무것도 매치하지 않는다(no-op). 그래서 검증은 따옴표에 의존하지 않는 정규식으로 한다.
 #    (파이프+sed는 비멱등이라 금지 — copy는 내용이 같으면 changed=0 보장)
 - name: "Apply containerd config"
   copy:
@@ -97,11 +119,22 @@
   register: registry_hosts
 
 # 9. 설정이 변경된 경우만 재시작 (매 실행 재시작 방지 — config.toml/hosts.toml 반영에는 재시작 필수)
+#    ⚠ 재시작은 이 노드의 모든 컨테이너를 흔든다. s1 은 docker(CDC 소스 DB)가 containerd 를
+#      공유하므로 그 컨테이너도 함께 죽는다 → 플레이는 serial: 1 로 한 대씩 돈다.
 - name: "Restart containerd on config change"
   systemd:
     name: containerd
     state: restarted
   when: containerd_config.changed or registry_hosts.changed
+
+# 10. 파드 샌드박스 이미지 사전 확보 — 재시작 직후 새로 뜨는 모든 파드가 이 이미지를 쓴다.
+#     containerd 2.x 는 기본값이 pause:3.10.1 로 kubeadm 1.34 와 같지만, 노드 캐시에는
+#     옛 pause:3.8 만 있을 수 있다. 미리 받아두지 않으면 재시작 직후 샌드박스 생성이 느려진다.
+- name: "Pre-pull pod sandbox (pause) image"
+  command: ctr -n k8s.io images pull {{ sandbox_image }}
+  register: sandbox_pull
+  changed_when: false
+  failed_when: false
 
 # -----------------------------------------------------
 # 검증
@@ -116,12 +149,29 @@
 - name: "Check installed containerd version"
   command: dpkg-query -W --showformat=${Version} containerd
   register: containerd_pkg_version
+  failed_when: false # 미설치여도 아래 assert 가 정돈된 메시지로 알리게 한다
+  changed_when: false
+
+# runc 도 같이 확인 — 짝이 어긋난 채 넘어가는 것을 여기서 잡는다
+- name: "Check installed runc version"
+  command: dpkg-query -W --showformat=${Version} runc
+  register: runc_pkg_version
+  failed_when: false
+  changed_when: false
+
+# 실행 중인 데몬이 새 바이너리인지 확인
+# dpkg 버전만 보면 "패키지는 2.2.1인데 데몬은 옛 프로세스" 상태가 통과한다 —
+# AppArmor 프로파일은 데몬이 기동할 때 커널에 올라가므로 이 확인이 필요하다.
+- name: "Check running containerd daemon version"
+  command: containerd --version
+  register: containerd_daemon_version
+  failed_when: false
   changed_when: false
 
 # hold 상태 확인
 - name: "Check held packages"
   command: apt-mark showhold
-  register: held_containerd
+  register: held_packages
   changed_when: false
 
 # 설정 파일에 SystemdCgroup = true 반영 확인 (grep 미일치 시 rc=1 → 실패 처리 안 함)
@@ -132,8 +182,10 @@
   changed_when: false
 
 # 설정 파일에 certs.d 경로 반영 확인
+# 따옴표 종류(1.x 쌍따옴표 / 2.x 홑따옴표)와 콜론 목록 형태를 모두 받아들인다.
+# 빈 값(config_path = '')은 매치되지 않으므로 transfer 플러그인 쪽 오탐이 없다.
 - name: "Check certs.d config_path in config"
-  command: grep -c 'config_path = "/etc/containerd/certs.d"' /etc/containerd/config.toml
+  command: grep -Ec "config_path = ['\"][^'\"]*/etc/containerd/certs\.d" /etc/containerd/config.toml
   register: config_path_check
   failed_when: false
   changed_when: false
@@ -151,11 +203,14 @@
     that:
       - containerd_status.stdout == "active"
       - containerd_pkg_version.stdout == containerd_version # 고정 버전 일치 (조건문 안에서는 {{ }} 금지)
-      - '"containerd" in held_containerd.stdout_lines'
+      - runc_pkg_version.stdout == runc_version # 짝이 어긋나면 파드가 종료되지 않는다
+      - '"containerd" in held_packages.stdout_lines'
+      - '"runc" in held_packages.stdout_lines'
       - systemd_cgroup_check.stdout | int >= 1
       - config_path_check.stdout | int >= 1
-    success_msg: "Good!.. | containerd {{ containerd_pkg_version.stdout }} active & held (SystemdCgroup = true, certs.d enabled)"
-    fail_msg: "ERROR!.. | containerd inactive, version mismatch or NOT held"
+      - containerd_version.split("-")[0] in containerd_daemon_version.stdout # 데몬이 옛 바이너리로 남아 있으면 실패
+    success_msg: "Good!.. | containerd {{ containerd_pkg_version.stdout }} + runc {{ runc_pkg_version.stdout }} active & held (SystemdCgroup = true, certs.d enabled)"
+    fail_msg: "ERROR!.. | containerd/runc 버전 불일치·hold 누락, 서비스 비활성, SystemdCgroup/certs.d 미반영, 또는 데몬이 옛 바이너리"
 
 - name: "Assert insecure registry hosts.toml applied"
   assert:
@@ -205,8 +260,8 @@ ok: [ap] => {
 }
 
 TASK [Assert insecure registry hosts.toml applied]
-ok: [ap] => (item=192.168.56.200:30002) => {
-    "msg": "Good!.. | insecure registry applied: 192.168.56.200:30002"
+ok: [ap] => (item=data-layer-harbor) => {
+    "msg": "Good!.. | insecure registry applied: data-layer-harbor"
 }
 ```
 ---
