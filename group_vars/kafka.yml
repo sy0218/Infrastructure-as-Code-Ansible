@@ -1,0 +1,65 @@
+# =======================================
+# Kafka 설치 버전 고정 (kafka 사용)
+# → ADR 0: 브로커는 K8s 가 아니라 로컬(systemd) 설치
+# 로컬 디스크 I/O, 짧은 네트워크 경로, Kafka 자체 HA(RF=3)가 이유.
+# =======================================
+kafka_version: "4.0.1"
+kafka_scala_version: "2.13"
+kafka_jmx_exporter_version: "1.0.1"
+
+# =======================================
+# 설치 경로 / 실행 계정 (kafka 사용)
+# → kafka_home 은 심볼릭 링크(실체는 kafka_<스칼라>-<버전>)
+#     — project_envs 의 KAFKA_HOME 과 반드시 일치
+# → kafka_java_home 은 java 롤이 설치한 JDK 경로 조립
+#     — project_envs 의 JAVA_HOME 과 동일
+# =======================================
+kafka_install_root: /application
+kafka_home: /application/kafka
+kafka_data_dir: /data/kafka # 로그 세그먼트
+kafka_log_dir: /logs/kafka # 브로커 애플리케이션 로그 (LOG_DIR)
+kafka_user: kafka # 로그인 불가 시스템 계정
+kafka_java_home: "/usr/lib/jvm/java-{{ java_version }}-openjdk-amd64"
+
+# =======================================
+# KRaft 클러스터 구성 (kafka 사용)
+#   → 사용 포트: 9092 클라이언트 / 9093 브로커간 / 9094 컨트롤러 / 9404 JMX 메트릭.
+#   바꾸면 Terraform 300-data-layer-base 의 kafka_bootstrap_servers,
+#   302-monitoring 의 kafka_jmx_targets 도 반드시 함께 고칠 것
+# =======================================
+kafka_cluster_id: "HX65iPPZTWOoFe5w-Od0Sw"
+kafka_client_port: "9092"
+kafka_internal_port: "9093"
+kafka_controller_port: "9094"
+kafka_jmx_port: "9404"
+
+# =======================================
+# 복제/파티션 기본값 (kafka 사용)
+# → min ISR 1 = 브로커 2대가 죽어도 쓰기 지속 (내구성 ↔ 가용성 트레이드오프)
+# =======================================
+kafka_replication_factor: "3"
+kafka_min_isr: "1"
+kafka_num_partitions: "3"
+
+# =======================================
+# 토픽 프로비저닝 (kafka_topics 사용)
+# =======================================
+kafka_topic_partitions: "3"
+kafka_topic_list:
+  - raw.qm.qm-chemical.batches
+  - raw.qm.qm-chemical.qc-results
+  - raw.qm.qm-chemical.event-logs
+  - raw.qm.qm-chemical.replacement-history
+  - raw.qm.qm-chemical.control-loop-defs
+  - raw.qm.qm-chemical.claims
+  - raw.qm.qm-chemical.lab-results
+  - raw.qm.qm-chemical.sensor-timeseries
+  # 파이프라인 내부 (cdm / dlq / lineage)
+  - cdm-topic
+  - dlq-cdm-topic
+  - dlq-cdm-consumer-rdb
+  - dlq-cdm-consumer-graph
+  - dlq-cdm-consumer-warehouse
+  - dlq.raw
+  - lineage-topic
+  - dlq-lineage

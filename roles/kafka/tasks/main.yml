@@ -1,18 +1,18 @@
-# -----------------------------------------------------
-# Kafka 설치 → Apache Kafka tarball + KRaft 3노드 로컬 클러스터
-# -----------------------------------------------------
-# ADR 0 (Kafka) : 브로커는 K8s 가 아니라 서버 로컬(systemd)에 설치한다
+# =====================================================
+# Kafka 설치
+#   → Apache Kafka tarball + KRaft 3노드 로컬 클러스터
+# =====================================================
+# ADR (Kafka) : 브로커는 K8s 가 아니라 서버 로컬(systemd)에 설치한다
 #   - 로컬 디스크 직접 사용(I/O), 짧은 네트워크 경로, Kafka 자체 HA(RF=3).
-# K8s STS 시절 계약 승계: CLUSTER_ID 동일, 리스너 9092/9093/9094.
-# (JMX 포트만 9098 → 9404 로 옮겼다 — 노드의 calico-typha 가 9098 을 점유한다)
-# 
+#
 # [주의] Kafka 4.0+ 브로커는 Java 17 필수 → java 롤(java_version)이 먼저 적용돼 있어야 한다.
-# -----------------------------------------------------
+# =====================================================
 
-# =========================================================================
+
+# -----------------------------------------------------
 # 1. kafka 전용 계정 생성 (user 모듈 자체가 멱등 )
 #    → 로그인 불가 계정 ( /usr/sbin/nologin )
-# =========================================================================
+# -----------------------------------------------------
 - name: "Create kafka system user"
   user:
     name: "{{ kafka_user }}"
@@ -20,10 +20,10 @@
     shell: /usr/sbin/nologin
     create_home: false
 
-# =========================================================================
+# -----------------------------------------------------
 # 2. 디렉토리 생성 (file 모듈 자체가 멱등)
 #    → 데이터/로그는 브로커 실행 계정 소유 ( 브로커가 세그먼트/로그를 직접 쓴다 )
-# =========================================================================
+# -----------------------------------------------------
 - name: "Create kafka directories"
   file:
     path: "{{ item.path }}"
@@ -38,10 +38,10 @@
     - { path: "{{ kafka_data_dir }}", owner: "{{ kafka_user }}" } # 로그 세그먼트(브로커 데이터)
     - { path: "{{ kafka_log_dir }}", owner: "{{ kafka_user }}" } # 브로커 애플리케이션 로그
 
-# =========================================================================
+# -----------------------------------------------------
 # 3. Kafka tarball 다운로드
 #    → 파일명에 버전 포함 / kafka_version 변경 시 새로 받고, 같으면 스킵되어 멱등
-# =========================================================================
+# -----------------------------------------------------
 - name: "Download kafka tarball"
   get_url:
     url: "https://archive.apache.org/dist/kafka/{{ kafka_version }}/kafka_{{ kafka_scala_version }}-{{ kafka_version }}.tgz"
@@ -52,10 +52,10 @@
   delay: 10
   until: kafka_tarball is succeeded # register 변수(kafka_tarball) 실행 결과가 "is succeeded" 가 될 때까지 실행
 
-# =========================================================================
+# -----------------------------------------------------
 # 4. 압축 해제 (비멱등 명령 가드 / creates= 로 이미 풀린 버전은 스킵)
 #    → creates : 이 파일/디렉토리 가 있으면 이 작업을 실행하지 마라
-# =========================================================================
+# -----------------------------------------------------
 - name: "Extract kafka tarball"
   unarchive:
     src: "{{ kafka_install_root }}/kafka_{{ kafka_scala_version }}-{{ kafka_version }}.tgz"
@@ -65,20 +65,19 @@
     group: root
     creates: "{{ kafka_install_root }}/kafka_{{ kafka_scala_version }}-{{ kafka_version }}/bin/kafka-server-start.sh"
 
-# =========================================================================
+# -----------------------------------------------------
 # 5. KAFKA_HOME 심볼릭 링크 (file 모듈 자체가 멱등 / 버전 변경 시 링크만 교체되어 롤백 쉬움)
 #    → (project_envs 의 KAFKA_HOME=/application/kafka 이 이 링크를 가리킨다)
-# =========================================================================
+# -----------------------------------------------------
 - name: "Link kafka home to versioned directory"
   file:
     src: "{{ kafka_install_root }}/kafka_{{ kafka_scala_version }}-{{ kafka_version }}"
     path: "{{ kafka_home }}"
     state: link
 
-# =========================================================================
+# -----------------------------------------------------
 # 6. JMX Prometheus javaagent 다운로드 (파일명에 버전 포함 / 버전 변경 시에만 새로 받음)
-#    (기존 브로커 이미지가 얹던 것과 동일 아티팩트 / 302-monitoring kafka-jmx 잡의 스크랩 대상)
-# =========================================================================
+# -----------------------------------------------------
 - name: "Download jmx prometheus javaagent"
   get_url:
     url: "https://repo1.maven.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/{{ kafka_jmx_exporter_version }}/jmx_prometheus_javaagent-{{ kafka_jmx_exporter_version }}.jar"
@@ -89,11 +88,11 @@
   delay: 10
   until: jmx_jar is succeeded
 
-# =========================================================================
+# -----------------------------------------------------
 # 7. JMX MBean → Prometheus 매핑 규칙 (copy 자체가 멱등)
 #    → JMX Exporter 가 Kafka의 어떤 정보를 가져와 Prometheus 형식으로 어떻게 바꿀지 정의하는 파일
 #    → 수 많은 Kafka 내부 정보 중 필요한 것만 골라서 프로메테우스가 이해하는 메트릭트로 변환하는 규칙입니다.
-# =========================================================================
+# -----------------------------------------------------
 - name: "Create jmx exporter config"
   copy:
     dest: /etc/kafka/jmx_exporter.yaml
@@ -114,12 +113,11 @@
         - "kafka.network:type=RequestMetrics,name=TotalTimeMs,*"
         # KRaft 메타데이터
         - "kafka.server:type=MetadataLoader,name=*"
-        # 브로커 JVM GC/힙 — 룰이 있어야 실제로 수출된다 (아래 java.lang 룰과 세트)
+        # 브로커 JVM GC/힙 → 룰이 있어야 실제로 수출된다 (아래 java.lang 룰과 세트)
         - "java.lang:type=GarbageCollector,*"
         - "java.lang:type=Memory"
 
       rules:
-        # Percentile (라벨 1개 + quantile) — 라벨 있는 규칙을 먼저 둬야 흡수 안 됨
         - pattern: 'kafka.(\w+)<type=(.+), name=(.+), (.+)=(.+)><>(\d+)thPercentile'
           name: kafka_$1_$2_$3
           type: GAUGE
@@ -158,12 +156,12 @@
           name: jvm_memory_$1_$2
           type: GAUGE
 
-# =========================================================================
+# ------------------------------------------------------
 # 8. server.properties 생성 (copy 자체가 멱등)
 #    → 변수는 host.yml kafka 그룹에서 관리
 #    → 변경 시 핸들러가 브로커를 재시작한다.
 #        - 재시작은 play의 모든 task가 끝난 뒤 handler가 실행됩니다.
-# =========================================================================
+# ------------------------------------------------------
 - name: "Create kafka server.properties from inventory variables"
   copy:
     dest: /etc/kafka/server.properties
@@ -198,12 +196,12 @@
       log.message.timestamp.type=LogAppendTime
   notify: restart kafka # 재기동 예약 걸어둠 (play의 모든 task가 끝난 뒤 handler 실행)
 
-# =========================================================================
+# ---------------------------------------------------------
 # 9. KRaft 스토리지 포맷 (비멱등 명령 가드)
 #    → meta.properties 가 생기면 재실행 안 함
 #    → CLUSTER_ID 는 최초 포맷 시 각인 
 #        — host.yml 의 kafka_cluster_id, 전 노드 동일해야 한다.
-# =========================================================================
+# ---------------------------------------------------------
 - name: "Format kraft storage"
   command: "{{ kafka_home }}/bin/kafka-storage.sh format -t {{ kafka_cluster_id }} -c /etc/kafka/server.properties"
   args:
@@ -212,14 +210,14 @@
   environment:
     JAVA_HOME: "{{ kafka_java_home }}"
 
-# =========================================================================
+# ---------------------------------------------------------
 # 10. systemd 유닛 생성 (copy 자체가 멱등)
 #     → 변경 시 핸들러가 daemon-reload + 재시작
 #     → KAFKA_OPTS 의 javaagent 가 :{{ kafka_jmx_port }} 로 메트릭을 노출한다.
 #     → JMX_PORT env 는 쓰지 않는다 → CLI(kafka-topics.sh 등)가 같은 포트를 또 열다 죽는다.
 #     → javaagent 는 premain 에서 포트 바인드에 실패하면 JVM 을 그대로 종료시킨다
 #        (브로커가 아니라 에이전트가 브로커를 죽인다) → 아래 11 번에서 선점 여부를 먼저 본다.
-# =========================================================================
+# ---------------------------------------------------------
 - name: "Create kafka systemd unit"
   copy:
     dest: /etc/systemd/system/kafka.service
@@ -249,12 +247,12 @@
       WantedBy=multi-user.target
   notify: restart kafka
 
-# =========================================================================
+# ---------------------------------------------------------
 # 11. JMX 포트 선점 확인 (조회만 / changed_when: false)
 #     → 다른 프로세스가 물고 있으면 javaagent 가 JVM 을 죽여 브로커가 크래시 루프에 빠진다.
 #       기동을 시도해 봐야 원인이 스택트레이스에 묻히므로 시작 전에 먼저 끊는다.
 #     → kafka 자신이 이미 물고 있는 경우(재실행)는 정상이므로 MainPID 를 제외한다.
-# =========================================================================
+# ---------------------------------------------------------
 - name: "Get kafka service main pid"
   command: systemctl show kafka -p MainPID --value
   register: kafka_mainpid
@@ -273,9 +271,9 @@
     success_msg: "Good!.. | jmx port {{ kafka_jmx_port }} available"
     fail_msg: "ERROR!.. | jmx port {{ kafka_jmx_port }} taken by another process (javaagent 가 JVM 을 죽인다) → {{ jmx_port_owner.stdout }}"
 
-# =========================================================================
+# ---------------------------------------------------------
 # 12. 서비스 기동 + 부팅 자동시작 (systemd 모듈 자체가 멱등)
-# =========================================================================
+# ---------------------------------------------------------
 - name: "Enable and start kafka"
   systemd:
     name: kafka
@@ -283,18 +281,16 @@
     state: started
     daemon_reload: true # 최초 설치 시 유닛 인식용 (reload 자체는 changed 로 잡히지 않음)
 
-# =========================================================================
+# ---------------------------------------------------------
 # 13. 설정 변경분을 검증 전에 반영한다
 #     → 검증 전, 핸들러 반영 (핸들러는 기본적으로 플레이 끝에 실행되므로)
-# =========================================================================
+# ---------------------------------------------------------
 - name: "Flush handlers before verification"
   meta: flush_handlers
 
 # -----------------------------------------------------
-# 검증
+# 14. 검증
 # -----------------------------------------------------
-# 기동 직후 상태부터 확인한다 — 크래시 루프면 'activating' 이 반복된다.
-# (여기서 끊지 않으면 아래 클러스터 대기에서 2분을 쓴 뒤 원인이 스택트레이스에 묻힌다)
 - name: "Check kafka service status"
   command: systemctl is-active kafka
   register: kafka_status

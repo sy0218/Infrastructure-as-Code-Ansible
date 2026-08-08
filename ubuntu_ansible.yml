@@ -7,7 +7,8 @@
   gather_facts: false
 
   roles:
-    - control
+    - { role: control, tags: ['control'] }
+
 
 # =====================================================
 # Ubuntu Servers
@@ -18,27 +19,24 @@
   gather_facts: false
 
   roles:
-    - root_password
-    - packages
-    - pip_packages
-    - nicname
-    - cloud_init
-    - ufw
-    - locale_ko
-    - ssh_root_login
-    - timezone
-    - ntp
-    - open_files
-    - logrotate
-    - shell_default
-    - java
-    #    - disable_swap
-    - enable_swap
-    - package_version_lock
-    - package_update_lock
-    - bash_common
-    - ssh_keygen
-    # 이 롤만 태그를 갖는 이유: /etc/hosts 는 인그레스 전환·노드 IP 변경 때 단독으로
-    # 다시 돌려야 하는데, 태그가 없으면 롤 20개 전체를 재실행하는 것이 유일한 경로다.
-    #   ansible-playbook ubuntu_ansible.yml --tags etc_hosts
-    - { role: etc_hosts, tags: ['etc_hosts'] }
+    - { role: root_password,         tags: ['root_password'] }
+    - { role: packages,              tags: ['packages'] }
+    - { role: pip_packages,          tags: ['pip_packages'] }
+    - { role: nicname,               tags: ['nicname'] }
+    - { role: cloud_init,            tags: ['cloud_init'] }
+    - { role: ufw,                   tags: ['ufw'] }
+    - { role: locale_ko,             tags: ['locale_ko'] }
+    - { role: ssh_root_login,        tags: ['ssh_root_login'] }
+    - { role: timezone,              tags: ['timezone'] }
+    - { role: ntp,                   tags: ['ntp'] }
+    - { role: open_files,            tags: ['open_files'] }
+    - { role: logrotate,             tags: ['logrotate'] }
+    - { role: shell_default,         tags: ['shell_default'] }
+    - { role: java,                  tags: ['java'] }
+    # - { role: disable_swap,        tags: ['disable_swap'] }
+    - { role: enable_swap,           tags: ['enable_swap'] }
+    - { role: package_version_lock,  tags: ['package_version_lock'] }
+    - { role: package_update_lock,   tags: ['package_update_lock'] }
+    - { role: bash_common,           tags: ['bash_common'] }
+    - { role: ssh_keygen,            tags: ['ssh_keygen'] }
+    - { role: etc_hosts,             tags: ['etc_hosts'] }

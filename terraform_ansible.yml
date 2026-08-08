@@ -7,4 +7,4 @@
   gather_facts: false
 
   roles:
-    - terraform # HashiCorp 저장소 등록 + terraform 설치/hold
+    - { role: terraform, tags: ['terraform'] } # HashiCorp 저장소 등록 + terraform 설치/hold
